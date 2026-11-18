@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Rack Manufaktur einbetten</title>
+<link rel="stylesheet" href="assets/fonts/fonts.css">
+<style>
+:root { --bg: #f3f6fb; --surface: #fff; --line: #dde0e0; --fg: #2a2c2d; --muted: #5f6d73; --accent: #1171e4; color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root { --bg: #17191b; --surface: #212426; --line: #34383b; --fg: #e8eaeb; --muted: #9aa3a8; --accent: #1a73e0; color-scheme: dark; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: .875rem/1.45 "IBM Plex Sans", system-ui, sans-serif; display: grid; grid-template-columns: minmax(0, 1fr) 22rem; height: 100vh; }
+#rack { min-width: 0; }
+aside { border-left: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; min-height: 0; }
+aside header { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+aside h1 { font-size: 1rem; margin: 0 0 2px; }
+aside p { margin: 0; color: var(--muted); font-size: .8125rem; }
+.btns { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+button { font: inherit; min-height: 32px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--fg); cursor: pointer; }
+button:hover { border-color: var(--accent); }
+pre { flex: 1; margin: 0; padding: 12px 16px; overflow: auto; font: .75rem/1.4 "IBM Plex Mono", ui-monospace, monospace; white-space: pre-wrap; }
+@media (max-width: 51.25em) { body { grid-template-columns: minmax(0, 1fr); grid-template-rows: 70vh auto; height: auto; } aside { border-left: 0; border-top: 1px solid var(--line); } pre { max-height: 50vh; } }
+</style>
+</head>
+<body>
+<div id="rack"></div>
+<aside>
+  <header><h1>Einbett-API · Demo</h1><p>Rack Manufaktur im iframe, gesteuert über embed.js. Protokoll: docs/api.md</p></header>
+  <div class="btns">
+    <button type="button" data-do="getSummary">Zusammenfassung</button>
+    <button type="button" data-do="getOrders">Bestellungen</button>
+    <button type="button" data-do="getBom">Stückliste</button>
+    <button type="button" data-do="getProject">Projekt-JSON</button>
+    <button type="button" data-do="newProject">Neues Projekt</button>
+    <button type="button" data-do="step3">Schritt 3</button>
+    <button type="button" data-do="dark">Dunkel</button>
+    <button type="button" data-do="light">Hell</button>
+  </div>
+  <pre id="log" aria-live="polite">Warte auf „ready“ …</pre>
+</aside>
+<script src="embed.js"></script>
+<script>
+const log = (label, data) => { const el = document.getElementById('log'); el.textContent = `${new Date().toLocaleTimeString()} · ${label}\n${data === undefined ? '' : JSON.stringify(data, null, 1)}\n\n` + el.textContent.slice(0, 20000); };
+const rw = RackWerk.embed('#rack', { src: './' });
+rw.on('ready', d => log('ready', d)).on('change', d => log('change', { total: d.total, usedHe: d.usedHe, warnings: d.warnings.length })).on('step', d => log('step', d)).on('project', d => log('project', d));
+const actions = {
+  getSummary: () => rw.getSummary(),
+  getOrders: () => rw.getOrders(),
+  getBom: () => rw.getBom(),
+  getProject: () => rw.getProject(),
+  newProject: () => rw.newProject({ name: 'Demo aus der Einbettung', client: 'Test' }),
+  step3: () => rw.setStep(3),
+  dark: () => rw.setTheme('dark'),
+  light: () => rw.setTheme('light')
+};
+document.querySelector('.btns').addEventListener('click', async e => {
+  const b = e.target.closest('[data-do]'); if (!b) return;
+  try { log(b.dataset.do, await actions[b.dataset.do]()); } catch (err) { log(b.dataset.do + ' · Fehler', { code: err.code, message: err.message }); }
+});
+</script>
+</body>
+</html>

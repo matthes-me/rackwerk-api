@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="rackwerk-api" content="1">
 <title data-noi18n>Rack Manufaktur Konfigurator</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314181d'/%3E%3Cpath d='M8 27 18 5h6L14 27z' fill='%23f2c200'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="assets/fonts/fonts.css">
@@ -608,6 +609,9 @@ td input.shop { min-width: 110px; }
 @media (min-width: 56.25em) { .projbar { flex-wrap: nowrap; } }
 
 @media (prefers-reduced-motion: reduce) { .btn, .steps button { transition: none; } }
+/* Einbettung (?embed=1): Projekte verwaltet die einbettende Anwendung */
+html[data-embed] .projbar, html[data-embed] .site-foot { display: none; }
+html[data-embed] .top { margin-bottom: 12px; }
 
 /* Touch & Telefon: Tippflächen mindestens 44 px, Kopfzeile linksbündig, ein Rand */
 @media (pointer: coarse), (max-width: 51.25em) {
@@ -877,7 +881,7 @@ const fmtN = n => String(Math.round(n * 100) / 100).replace('.', ',');
    UI texts are written in German in the code; in English mode a dictionary (data/i18n/*.json, block DATA:I18N)
    translates every rendered text node and the title/aria-label/placeholder attributes. Keys may contain
    placeholders {0}, {1} … for inserted values. Unknown texts fall back to a term list (catalog vocabulary). */
-const LANG = (() => { try { const l = localStorage.getItem('rm-lang'); if (l === 'de' || l === 'en') return l; } catch (e) {} return /^de\b/i.test(navigator.language || '') ? 'de' : 'en'; })();
+const LANG = (() => { try { const u = new URLSearchParams(location.search).get('lang'); if (u === 'de' || u === 'en') return u; } catch (e) {} try { const l = localStorage.getItem('rm-lang'); if (l === 'de' || l === 'en') return l; } catch (e) {} return /^de\b/i.test(navigator.language || '') ? 'de' : 'en'; })();
 const LOC = LANG === 'en' ? 'en-GB' : 'de-DE';
 document.documentElement.lang = LANG;
 /* DATA:I18N */ const I18N_EN = {
@@ -2488,7 +2492,7 @@ function empty() {
 }
 const KEY = 'rackwerk-v1';
 function load() { try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.items && s.case) return normalize(s); } catch (e) {} return null; }
-function save() { try { localStorage.setItem(KEY, JSON.stringify(stripped())); } catch (e) {} LIB.queue(); }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(stripped())); } catch (e) {} LIB.queue(); apiNotify(); }
 /* ---------- Projektbibliothek (IndexedDB) und Projektordner (File System Access) ---------- */
 const LIB = (() => {
   const L = { off: false, count: 0, dir: null, dirOk: false, dirName: '', fs: typeof window.showDirectoryPicker === 'function' && (() => { try { return window.top === window.self; } catch (e) { return false; } })(), sig: {}, busy: false };
@@ -2638,7 +2642,7 @@ async function switchTo(s, msg) {
   const ae = document.activeElement; if (ae && ae.dataset && ae.dataset.proj) ae.blur();   // sonst bleibt der alte Name im Feld stehen
   state = s; sel = state.items[0]?.id ?? null; selSlot = null; view = 'front';
   try { localStorage.setItem(KEY, JSON.stringify(stripped())); } catch (e) {}
-  render(); await LIB.put(stripped(), { quiet: true }); renderSwitch();
+  render(); await LIB.put(stripped(), { quiet: true }); renderSwitch(); apiNotify();
   if (msg) toast(msg);
 }
 async function newProject(base, msg) { const ov = state.ov; const s = stamp(base); s.ov = ov; s.step = 1; await switchTo(s, msg); }
@@ -5607,8 +5611,107 @@ Object.keys(EXACT_JSON).forEach(k => { EXACT[k] = EXACT_JSON[k]; });   // data/v
   b.onclick = () => { try { localStorage.setItem('rm-lang', LANG === 'en' ? 'de' : 'en'); } catch (e) {} LIB.flush().finally(() => location.reload()); }; }
 
 { const b = $('#buildRef'); if (b && b.getAttribute('href').includes('__GIT_')) b.remove(); }   // Commit nur in der hochgeladenen Fassung (scripts/deploy.sh)
+/* ---------- Einbett- und Erweiterungs-API (postMessage) ----------
+   Protokoll und Beispiele: docs/api.md. Nachrichten tragen { rackwerk: 1 }.
+   Anfrage:  { rackwerk: 1, id, method, params }      → Antwort { rackwerk: 1, id, result } oder { …, error: { code, message } }
+   Ereignis: { rackwerk: 1, event, data }              (ready an alle; change/step nur an Absender, die "subscribe" gerufen haben)
+   Erlaubte Absender: das einbettende Fenster (window.parent) und die Seite selbst (Content-Script einer Erweiterung).
+   Schreibende Methoden nur vom einbettenden Fenster. */
+const API_VERSION = 1;
+const API_SUBS = new Set();   // Origins, die Ereignisse bekommen
+const apiSlug = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'offen';
+const API_MAKERS = (() => {   // längste zuerst, damit "Flyht Pro" vor "Flyht" greift
+  const s = new Set(['Adam Hall', 'ProCase', 'Thon', 'Thomann', 'MA', 'Flyht Pro', 'Seetronic', 'Neutrik', 'Amphenol', 'Millenium', 'Blackmagic Design']);
+  Object.values(DEVDB).forEach(d => d && d.mk && s.add(d.mk));
+  return [...s].sort((a, b) => b.length - a.length);
+})();
+function apiSplitArt(art) {
+  const a = String(art || '').trim(); if (!a) return { maker: '', partNo: '' };
+  const mk = API_MAKERS.find(m => a === m || a.startsWith(m + ' '));
+  return mk ? { maker: mk, partNo: a.slice(mk.length).trim() } : { maker: '', partNo: a };
+}
+const apiName = n => LANG === 'en' ? tr(n) : n;
+function apiRow(r) {
+  const { maker, partNo } = apiSplitArt(r.art);
+  return {
+    key: r.key, qty: r.qty, name: apiName(r.n), art: r.art || '', maker, partNo,
+    search: r.art || r.n,                          // Suchbegriff im Shop, wenn keine Shop-Nummer bekannt ist
+    supplier: r.shop, supplierId: apiSlug(r.shop),
+    price: r.price, priceSource: r.src,            // cart | web | ref | check | user
+    total: r.price != null ? Math.round(r.price * r.qty * 100) / 100 : null,
+    kg: r.kg, owned: r.shop === 'Vorhanden', note: r.note || ''
+  };
+}
+function apiProjectRef() { return { id: state.id, name: state.project.name || '', client: state.project.client || '', updated: state.updated || null }; }
+function apiBom() { const rows = bom(), W = weightOf(rows); return { project: apiProjectRef(), currency: 'EUR', lang: LANG, items: rows.map(apiRow), weightKg: Math.round(W.kg * 10) / 10, itemsWithoutWeight: W.miss.length }; }
+function apiOrders(p = {}) {
+  const groups = orderGroups(bom()), suppliers = [], skipped = { owned: [], open: [] };
+  groups.forEach(([shop, list]) => {
+    const items = list.map(apiRow);
+    if (shop === 'Vorhanden') { skipped.owned.push(...items); return; }
+    if (shop === 'Offen' && !p.includeOpen) { skipped.open.push(...items); return; }
+    const total = items.reduce((s, i) => s + (i.total || 0), 0);
+    suppliers.push({ supplier: shop, supplierId: apiSlug(shop), items, total: Math.round(total * 100) / 100, itemsWithoutPrice: items.filter(i => i.price == null).length });
+  });
+  const only = p.supplierId ? [].concat(p.supplierId) : null;
+  return { project: apiProjectRef(), currency: 'EUR', generated: new Date().toISOString(), suppliers: only ? suppliers.filter(s => only.includes(s.supplierId)) : suppliers, skipped };
+}
+function apiSummary() {
+  const L = layout(), rows = bom(), W = weightOf(rows);
+  return { project: apiProjectRef(), step: state.step, case: { type: state.case.type, he: state.case.he, depth: state.case.depth, rear: !!state.case.rear },
+    items: state.items.length, usedHe: Math.round(Math.max(0, L.maxEnd || 0) * 10) / 10, warnings: warnings(L).map(w => ({ error: !!w.err, text: apiName(w.t) })),
+    total: Math.round(rows.reduce((s, r) => s + (r.shop !== 'Vorhanden' && r.price != null ? r.price * r.qty : 0), 0) * 100) / 100, weightKg: Math.round(W.kg * 10) / 10 };
+}
+function apiCheckProject(raw) { if (!raw || typeof raw !== 'object' || !raw.case || !Array.isArray(raw.items)) throw { code: 'invalid_project', message: 'project needs "case" and "items" (Rack Manufaktur project file)' }; }
+const API_METHODS = {
+  ping: () => ({ app: 'rack-manufaktur', apiVersion: API_VERSION, lang: LANG, embedded: window.parent !== window }),
+  subscribe: (p, ev) => { API_SUBS.add(ev.origin); return { events: ['change', 'step', 'project'] }; },
+  unsubscribe: (p, ev) => { API_SUBS.delete(ev.origin); return true; },
+  getProject: () => stripped(),
+  getSummary: () => apiSummary(),
+  getBom: () => apiBom(),
+  getOrders: p => apiOrders(p),
+  loadProject: { write: true, fn: async p => { const raw = p && p.project; apiCheckProject(raw); const s = normalize(JSON.parse(JSON.stringify(raw))); if (p.step) s.step = +p.step; await switchTo(s); return apiProjectRef(); } },
+  newProject: { write: true, fn: async (p = {}) => { const s = Object.assign(empty(), { step: 1 }); ['name', 'client', 'note'].forEach(k => { if (p[k] != null) s.project[k] = String(p[k]); }); await newProject(s); return apiProjectRef(); } },
+  setProjectInfo: { write: true, fn: (p = {}) => { ['name', 'client', 'note'].forEach(k => { if (p[k] != null) state.project[k] = String(p[k]); }); render(); save(); renderSwitch(); return apiProjectRef(); } },
+  setStep: { write: true, fn: (p = {}) => { const n = +p.step; if (![1, 2, 3].includes(n)) throw { code: 'invalid_step', message: 'step must be 1, 2 or 3' }; state.step = n; render(); save(); return { step: n }; } },
+  setTheme: { write: true, fn: (p = {}) => { const t = p.theme; if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else if (t === 'auto' || t == null) delete document.documentElement.dataset.theme; else throw { code: 'invalid_theme', message: 'theme must be light, dark or auto' }; return { theme: document.documentElement.dataset.theme || 'auto' }; } },
+  setLang: { write: true, fn: (p = {}) => { if (p.lang !== 'de' && p.lang !== 'en') throw { code: 'invalid_lang', message: 'lang must be de or en' }; if (p.lang !== LANG) { try { localStorage.setItem('rm-lang', p.lang); } catch (e) {} const u = new URL(location.href); if (u.searchParams.has('lang')) u.searchParams.set('lang', p.lang); LIB.flush().finally(() => location.replace(u.href)); } return { lang: p.lang, reload: p.lang !== LANG }; } }
+};
+function apiPost(target, origin, msg) { try { target.postMessage({ rackwerk: API_VERSION, ...msg }, origin && origin !== 'null' ? origin : '*'); } catch (e) {} }
+function apiEmit(event, data) {
+  if (window.parent !== window) API_SUBS.forEach(o => apiPost(window.parent, o, { event, data }));
+  if (API_SUBS.has(location.origin)) apiPost(window, location.origin, { event, data });
+}
+let apiTimer = 0, apiStep = state.step, apiProj = state.id;
+function apiNotify() {   // aus save(): gebündelt, höchstens alle 300 ms
+  if (!API_SUBS.size) return;
+  clearTimeout(apiTimer); apiTimer = setTimeout(() => {
+    if (state.id !== apiProj) { apiProj = state.id; apiEmit('project', apiProjectRef()); }
+    if (state.step !== apiStep) { apiStep = state.step; apiEmit('step', { step: state.step }); }
+    apiEmit('change', apiSummary());
+  }, 300);
+}
+window.addEventListener('message', async ev => {
+  const m = ev.data; if (!m || typeof m !== 'object' || m.rackwerk == null || !m.method || m.event) return;
+  const fromParent = window.parent !== window && ev.source === window.parent;
+  const fromSelf = ev.source === window && ev.origin === location.origin;
+  if (!fromParent && !fromSelf) return;
+  const reply = r => apiPost(ev.source, ev.origin, { id: m.id, ...r });
+  const def = API_METHODS[m.method];
+  if (!def) return reply({ error: { code: 'unknown_method', message: `unknown method "${m.method}"` } });
+  const fn = typeof def === 'function' ? def : def.fn;
+  if (def.write && !fromParent) return reply({ error: { code: 'forbidden', message: `"${m.method}" is only allowed from the embedding page` } });
+  try { reply({ result: await fn(m.params || {}, ev) }); }
+  catch (e) { reply({ error: { code: e && e.code || 'error', message: e && e.message || String(e) } }); }
+});
+/* Einbettung: ?embed=1 blendet Projektverwaltung aus, ?theme=light|dark setzt das Erscheinungsbild */
+{ const q = new URLSearchParams(location.search);
+  if (q.get('embed') === '1') document.documentElement.dataset.embed = '1';
+  const th = q.get('theme'); if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th; }
 render();
 LIB.init();
+apiPost(window.parent !== window ? window.parent : window, '*', { event: 'ready', data: { app: 'rack-manufaktur', apiVersion: API_VERSION, lang: LANG } });
 })();
 </script>
 </body>
