@@ -213,6 +213,11 @@ if (document.querySelector('meta[name="rackwerk-api"]')) {
 }
 ```
 
+A working Chrome extension (Thomann, ProCase, Adam Hall) lives in its own repository,
+[matthes-me/rackwerk-cart-extension](https://github.com/matthes-me/rackwerk-cart-extension), and is
+included here as the Git submodule [`extension/`](../extension/README.md). Clone with
+`git clone --recurse-submodules`, or run `git submodule update --init` in an existing checkout.
+
 What the data already gives each supplier adapter:
 
 | Supplier | What identifies the item | Notes |

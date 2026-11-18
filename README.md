@@ -29,6 +29,7 @@ Cases: **ProCase Pro rack modules** and **ProCase QSD racks** (procaseshop.de) a
 - **Review editor:** overlay a manufacturer photo or drawing (stays local), correct elements by dragging, approve front/rear/data. See [docs/ai-workflow.md](docs/ai-workflow.md).
 - **Export:** project PDF (views, BOM, orders, build notes), front/rear view as PNG, project file (.json). Exports follow the selected language.
 - **Embedding and extension API:** other pages (e.g. StageCraft) embed the configurator with `embed.js` and read project, bill of materials and orders per supplier over `postMessage`; a browser extension can read the orders to fill supplier carts. See [docs/api.md](docs/api.md) and `public/embed-demo.html`.
+- **Cart extension:** a Chrome extension that puts the orders into the supplier carts (Thomann, ProCase, Adam Hall), in its own repository [matthes-me/rackwerk-cart-extension](https://github.com/matthes-me/rackwerk-cart-extension), included as the submodule `extension/` (`git submodule update --init`).
 
 ## Product data
 
