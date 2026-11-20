@@ -2,9 +2,16 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="rackwerk-api" content="1">
 <title data-noi18n>Rack Manufaktur Konfigurator</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#363839">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Rack Manufaktur">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314181d'/%3E%3Cpath d='M8 27 18 5h6L14 27z' fill='%23f2c200'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="assets/fonts/fonts.css">
 <style>
@@ -629,6 +636,41 @@ html[data-embed] .top { margin-bottom: 12px; }
   .top .btn.sm, .top select { min-height: 44px; }
   .projbar select { flex: 1 1 100%; }
   .summary { margin-left: 0; }
+}
+/* App-Layout für Telefon & Tablet hochkant: Schritte als Tab-Leiste am unteren Rand */
+@media (max-width: 51.25em) {
+  body { padding-bottom: calc(48px + 64px + env(safe-area-inset-bottom, 0px)); }
+  .top { padding-top: env(safe-area-inset-top, 0px); }
+  .steps {
+    position: fixed; z-index: 50; left: 0; right: 0; bottom: 0; width: auto; order: 0;
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; overflow: visible;
+    padding: 6px max(8px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
+    background: var(--nav); border-top: 1px solid rgba(255, 255, 255, .12);
+  }
+  .steps button { flex-direction: column; justify-content: center; gap: 3px; height: auto; min-height: 52px; padding: 4px; white-space: normal; text-align: center; border-radius: 8px; }
+  .steps .lbl b { display: block; font-size: .75rem; line-height: 1.15; }
+  .toast { bottom: calc(78px + env(safe-area-inset-bottom, 0px)); }
+}
+/* Telefon: Kopfleiste in einer Zeile – Name links, Projekt-Aktionen als Symbole rechts, Projektwahl darunter */
+@media (max-width: 43.75em) {
+  .top-in { gap: 8px; min-height: 52px; }
+  .brand { order: 1; flex: 1 1 auto; min-width: 0; gap: 8px; }
+  .brand h1 { font-size: 1rem; flex: none; }
+  .projname { max-width: none; min-width: 0; flex: 0 1 auto; }
+  .top-in:has(#projSwitch:not([hidden])) .projname { display: none; }
+  .projbar { display: contents; }
+  .projbar .btn { order: 2; flex: none; }
+  .projbar .folderchip { order: 3; flex: 1 1 auto; justify-content: flex-start; }
+  .top #projSwitch { order: 4; flex: 1 1 60%; max-width: none; }
+  #btnReset:not([data-arm]), #btnProjects { font-size: 0; min-width: 44px; padding-inline: 11px; justify-content: center; }
+  #btnReset:not([data-arm])::before, #btnProjects::before {
+    content: ""; display: inline-block; width: 18px; height: 18px; background: currentColor;
+    -webkit-mask: var(--ico) center / contain no-repeat; mask: var(--ico) center / contain no-repeat;
+  }
+  #btnReset { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M11 4h2v16h-2zM4 11h16v2H4z'/%3E%3C/svg%3E"); }
+  #btnProjects { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z'/%3E%3C/svg%3E"); }
+  .card > header { flex-wrap: wrap; }
+  .card > header > .actions { flex: 1 1 100%; }
 }
 #projSwitch { max-width: 200px; padding: 5px 8px; font-size: .8125rem; }
 .folderchip .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; vertical-align: 1px; }
@@ -5712,6 +5754,9 @@ window.addEventListener('message', async ev => {
 render();
 LIB.init();
 apiPost(window.parent !== window ? window.parent : window, '*', { event: 'ready', data: { app: 'rack-manufaktur', apiVersion: API_VERSION, lang: LANG } });
+/* Installierbare App (PWA): Service Worker für Offline-Betrieb, nicht in Einbettungen */
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && window.parent === window)
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 })();
 </script>
 </body>
